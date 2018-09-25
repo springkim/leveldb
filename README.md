@@ -1,11 +1,21 @@
+# <img src="img/leveldb.png" width="70"> LevelDB
+
+## A light-weight, single-purpose library for persistence with bindings to many platforms.
+
+<img src="img/support_vs2013.png" width="150">
+<img src="img/support_vs2015.png" width="150">
+<img src="img/support_vs2017.png" width="150">
+<img src="img/support_mingw64.png" width="150">
+
 **LevelDB is a fast key-value storage library written at Google that provides an ordered mapping from string keys to string values.**
 
-[![Build Status](https://travis-ci.org/google/leveldb.svg?branch=master)](https://travis-ci.org/google/leveldb)
+
 
 Authors: Sanjay Ghemawat (sanjay@google.com) and Jeff Dean (jeff@google.com)
 
-# Features
+##### [http://leveldb.org/](http://leveldb.org/)
 
+### Features
   * Keys and values are arbitrary byte arrays.
   * Data is stored sorted by key.
   * Callers can provide a custom comparison function to override the sort order.
@@ -16,75 +26,58 @@ Authors: Sanjay Ghemawat (sanjay@google.com) and Jeff Dean (jeff@google.com)
   * Data is automatically compressed using the [Snappy compression library](http://google.github.io/snappy/).
   * External activity (file system operations etc.) is relayed through a virtual interface so users can customize the operating system interactions.
 
-# Documentation
+### Documentation
 
-  [LevelDB library documentation](https://github.com/google/leveldb/blob/master/doc/index.md) is online and bundled with the source code.
+  [LevelDB library documentation](doc/index.md) is online and bundled with the source code.
 
-# Limitations
+### Limitations
 
   * This is not a SQL database.  It does not have a relational data model, it does not support SQL queries, and it has no support for indexes.
   * Only a single process (possibly multi-threaded) can access a particular database at a time.
   * There is no client-server support builtin to the library.  An application that needs such support will have to wrap their own server around the library.
 
-# Building
+### Building
 
 This project supports [CMake](https://cmake.org/) out of the box.
 
-Quick start:
+##### Quick start with MSVC.
 
 ```bash
-mkdir -p build && cd build
-cmake -DCMAKE_BUILD_TYPE=Release .. && cmake --build .
+md build && cd build
+cmake .. -G "Visual Studio 14 2015 Win64"
+cmake --build . --config Release --target ALL_BUILD
+cmake --build . --config Debug --target ALL_BUILD
 ```
 
-Please see the CMake documentation and `CMakeLists.txt` for more advanced usage.
+All you need is a built **build\Release\libleveldb.lib** file.
+All dependencies were included in **build\Release\libleveldb.lib**.
 
-# Contributing to the leveldb Project
+##### Quick start with MinGW.
 
-The leveldb project welcomes contributions. leveldb's primary goal is to be
-a reliable and fast key/value store. Changes that are in line with the
-features/limitations outlined above, and meet the requirements below,
-will be considered.
+```bash
+md build && cd build
+cmake .. -G "MinGW Makefiles"
+cmake --build . --config Release
+```
+All you need is a built **build\libleveldb.a** file.
+All dependencies were included in **build\libleveldb.a**.
 
-Contribution requirements:
 
-1. **POSIX only**. We _generally_ will only accept changes that are both
-   compiled, and tested on a POSIX platform - usually Linux. Very small
-   changes will sometimes be accepted, but consider that more of an
-   exception than the rule.
 
-2. **Stable API**. We strive very hard to maintain a stable API. Changes that
-   require changes for projects using leveldb _might_ be rejected without
-   sufficient benefit to the project.
 
-3. **Tests**: All changes must be accompanied by a new (or changed) test, or
-   a sufficient explanation as to why a new (or changed) test is not required.
-
-## Submitting a Pull Request
-
-Before any pull request will be accepted the author must first sign a
-Contributor License Agreement (CLA) at https://cla.developers.google.com/.
-
-In order to keep the commit timeline linear
-[squash](https://git-scm.com/book/en/v2/Git-Tools-Rewriting-History#Squashing-Commits)
-your changes down to a single commit and [rebase](https://git-scm.com/docs/git-rebase)
-on google/leveldb/master. This keeps the commit timeline linear and more easily sync'ed
-with the internal repository at Google. More information at GitHub's
-[About Git rebase](https://help.github.com/articles/about-git-rebase/) page.
-
-# Performance
+### Performance
 
 Here is a performance report (with explanations) from the run of the
 included db_bench program.  The results are somewhat noisy, but should
 be enough to get a ballpark performance estimate.
 
-## Setup
+#### Setup
 
 We use a database with a million entries.  Each entry has a 16 byte
 key, and a 100 byte value.  Values used by the benchmark compress to
 about half their original size.
 
-    LevelDB:    version 1.1
+    LevelDB:    version 1.2
     Date:       Sun May  1 12:11:26 2011
     CPU:        4 x Intel(R) Core(TM)2 Quad CPU    Q6600  @ 2.40GHz
     CPUCache:   4096 KB
@@ -94,7 +87,7 @@ about half their original size.
     Raw Size:   110.6 MB (estimated)
     File Size:  62.9 MB (estimated)
 
-## Write performance
+#### Write performance
 
 The "fill" benchmarks create a brand new database, in either
 sequential, or random order.  The "fillsync" benchmark flushes data
@@ -118,7 +111,7 @@ responding before the data has been written to the platter.  This may
 or may not be safe based on whether or not the hard disk has enough
 power to save its memory in the event of a power failure.
 
-## Read performance
+#### Read performance
 
 We list the performance of reading sequentially in both the forward
 and reverse direction, and also the performance of a random lookup.
@@ -150,7 +143,7 @@ uncompressed blocks in memory, the read performance improves again:
     readrandom  : 9.775 micros/op;  (approximately 100,000 reads per second before compaction)
     readrandom  : 5.215 micros/op;  (approximately 190,000 reads per second after compaction)
 
-## Repository contents
+#### Repository contents
 
 See [doc/index.md](doc/index.md) for more explanation. See
 [doc/impl.md](doc/impl.md) for a brief overview of the implementation.
