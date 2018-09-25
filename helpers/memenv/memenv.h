@@ -5,8 +5,6 @@
 #ifndef STORAGE_LEVELDB_HELPERS_MEMENV_MEMENV_H_
 #define STORAGE_LEVELDB_HELPERS_MEMENV_MEMENV_H_
 
-#include "leveldb/export.h"
-
 namespace leveldb {
 
 class Env;
@@ -15,8 +13,8 @@ class Env;
 // all non-file-storage tasks to base_env. The caller must delete the result
 // when it is no longer needed.
 // *base_env must remain live while the result is in use.
-LEVELDB_EXPORT Env* NewMemEnv(Env* base_env);
+Env* NewMemEnv(Env* base_env);
 
-}  // namespace leveldb
+}
 
 #endif  // STORAGE_LEVELDB_HELPERS_MEMENV_MEMENV_H_

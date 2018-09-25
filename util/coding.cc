@@ -7,29 +7,29 @@
 namespace leveldb {
 
 void EncodeFixed32(char* buf, uint32_t value) {
-  if (port::kLittleEndian) {
-    memcpy(buf, &value, sizeof(value));
-  } else {
-    buf[0] = value & 0xff;
-    buf[1] = (value >> 8) & 0xff;
-    buf[2] = (value >> 16) & 0xff;
-    buf[3] = (value >> 24) & 0xff;
-  }
+#if __BYTE_ORDER == __LITTLE_ENDIAN
+  memcpy(buf, &value, sizeof(value));
+#else
+  buf[0] = value & 0xff;
+  buf[1] = (value >> 8) & 0xff;
+  buf[2] = (value >> 16) & 0xff;
+  buf[3] = (value >> 24) & 0xff;
+#endif
 }
 
 void EncodeFixed64(char* buf, uint64_t value) {
-  if (port::kLittleEndian) {
-    memcpy(buf, &value, sizeof(value));
-  } else {
-    buf[0] = value & 0xff;
-    buf[1] = (value >> 8) & 0xff;
-    buf[2] = (value >> 16) & 0xff;
-    buf[3] = (value >> 24) & 0xff;
-    buf[4] = (value >> 32) & 0xff;
-    buf[5] = (value >> 40) & 0xff;
-    buf[6] = (value >> 48) & 0xff;
-    buf[7] = (value >> 56) & 0xff;
-  }
+#if __BYTE_ORDER == __LITTLE_ENDIAN
+  memcpy(buf, &value, sizeof(value));
+#else
+  buf[0] = value & 0xff;
+  buf[1] = (value >> 8) & 0xff;
+  buf[2] = (value >> 16) & 0xff;
+  buf[3] = (value >> 24) & 0xff;
+  buf[4] = (value >> 32) & 0xff;
+  buf[5] = (value >> 40) & 0xff;
+  buf[6] = (value >> 48) & 0xff;
+  buf[7] = (value >> 56) & 0xff;
+#endif
 }
 
 void PutFixed32(std::string* dst, uint32_t value) {
@@ -125,14 +125,14 @@ const char* GetVarint32PtrFallback(const char* p,
       return reinterpret_cast<const char*>(p);
     }
   }
-  return nullptr;
+  return NULL;
 }
 
 bool GetVarint32(Slice* input, uint32_t* value) {
   const char* p = input->data();
   const char* limit = p + input->size();
   const char* q = GetVarint32Ptr(p, limit, value);
-  if (q == nullptr) {
+  if (q == NULL) {
     return false;
   } else {
     *input = Slice(q, limit - q);
@@ -154,14 +154,14 @@ const char* GetVarint64Ptr(const char* p, const char* limit, uint64_t* value) {
       return reinterpret_cast<const char*>(p);
     }
   }
-  return nullptr;
+  return NULL;
 }
 
 bool GetVarint64(Slice* input, uint64_t* value) {
   const char* p = input->data();
   const char* limit = p + input->size();
   const char* q = GetVarint64Ptr(p, limit, value);
-  if (q == nullptr) {
+  if (q == NULL) {
     return false;
   } else {
     *input = Slice(q, limit - q);
@@ -173,8 +173,8 @@ const char* GetLengthPrefixedSlice(const char* p, const char* limit,
                                    Slice* result) {
   uint32_t len;
   p = GetVarint32Ptr(p, limit, &len);
-  if (p == nullptr) return nullptr;
-  if (p + len > limit) return nullptr;
+  if (p == NULL) return NULL;
+  if (p + len > limit) return NULL;
   *result = Slice(p, len);
   return p + len;
 }
@@ -191,4 +191,4 @@ bool GetLengthPrefixedSlice(Slice* input, Slice* result) {
   }
 }
 
-}  // namespace leveldb
+}

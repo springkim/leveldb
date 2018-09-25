@@ -9,8 +9,9 @@ namespace leveldb {
 
 static const int kBlockSize = 4096;
 
-Arena::Arena() : memory_usage_(0) {
-  alloc_ptr_ = nullptr;  // First allocation will allocate a block
+Arena::Arena() {
+  blocks_memory_ = 0;
+  alloc_ptr_ = NULL;  // First allocation will allocate a block
   alloc_bytes_remaining_ = 0;
 }
 
@@ -39,7 +40,7 @@ char* Arena::AllocateFallback(size_t bytes) {
 }
 
 char* Arena::AllocateAligned(size_t bytes) {
-  const int align = (sizeof(void*) > 8) ? sizeof(void*) : 8;
+  const int align = sizeof(void*);    // We'll align to pointer size
   assert((align & (align-1)) == 0);   // Pointer size should be a power of 2
   size_t current_mod = reinterpret_cast<uintptr_t>(alloc_ptr_) & (align-1);
   size_t slop = (current_mod == 0 ? 0 : align - current_mod);
@@ -59,10 +60,9 @@ char* Arena::AllocateAligned(size_t bytes) {
 
 char* Arena::AllocateNewBlock(size_t block_bytes) {
   char* result = new char[block_bytes];
+  blocks_memory_ += block_bytes;
   blocks_.push_back(result);
-  memory_usage_.NoBarrier_Store(
-      reinterpret_cast<void*>(MemoryUsage() + block_bytes + sizeof(char*)));
   return result;
 }
 
-}  // namespace leveldb
+}

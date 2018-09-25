@@ -8,8 +8,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 const char* phase = "";
+static char dbname[200];
 
 static void StartPhase(const char* name) {
   fprintf(stderr, "=== Test %s\n", name);
@@ -119,31 +122,6 @@ static const char* CmpName(void* arg) {
   return "foo";
 }
 
-// Custom filter policy
-static unsigned char fake_filter_result = 1;
-static void FilterDestroy(void* arg) { }
-static const char* FilterName(void* arg) {
-  return "TestFilter";
-}
-static char* FilterCreate(
-    void* arg,
-    const char* const* key_array, const size_t* key_length_array,
-    int num_keys,
-    size_t* filter_length) {
-  *filter_length = 4;
-  char* result = malloc(4);
-  memcpy(result, "fake", 4);
-  return result;
-}
-unsigned char FilterKeyMatch(
-    void* arg,
-    const char* key, size_t length,
-    const char* filter, size_t filter_length) {
-  CheckCondition(filter_length == 4);
-  CheckCondition(memcmp(filter, "fake", 4) == 0);
-  return fake_filter_result;
-}
-
 int main(int argc, char** argv) {
   leveldb_t* db;
   leveldb_comparator_t* cmp;
@@ -152,19 +130,15 @@ int main(int argc, char** argv) {
   leveldb_options_t* options;
   leveldb_readoptions_t* roptions;
   leveldb_writeoptions_t* woptions;
-  char* dbname;
   char* err = NULL;
-  int run = -1;
 
-  CheckCondition(leveldb_major_version() >= 1);
-  CheckCondition(leveldb_minor_version() >= 1);
+  snprintf(dbname, sizeof(dbname), "/tmp/leveldb_c_test-%d",
+           ((int) geteuid()));
 
   StartPhase("create_objects");
   cmp = leveldb_comparator_create(NULL, CmpDestroy, CmpCompare, CmpName);
   env = leveldb_create_default_env();
   cache = leveldb_cache_create_lru(100000);
-  dbname = leveldb_env_get_test_directory(env);
-  CheckCondition(dbname != NULL);
 
   options = leveldb_options_create();
   leveldb_options_set_comparator(options, cmp);
@@ -177,7 +151,6 @@ int main(int argc, char** argv) {
   leveldb_options_set_max_open_files(options, 10);
   leveldb_options_set_block_size(options, 1024);
   leveldb_options_set_block_restart_interval(options, 8);
-  leveldb_options_set_max_file_size(options, 3 << 20);
   leveldb_options_set_compression(options, leveldb_no_compression);
 
   roptions = leveldb_readoptions_create();
@@ -196,12 +169,6 @@ int main(int argc, char** argv) {
   CheckCondition(err != NULL);
   Free(&err);
 
-  StartPhase("leveldb_free");
-  db = leveldb_open(options, dbname, &err);
-  CheckCondition(err != NULL);
-  leveldb_free(err);
-  err = NULL;
-
   StartPhase("open");
   leveldb_options_set_create_if_missing(options, 1);
   db = leveldb_open(options, dbname, &err);
@@ -213,14 +180,6 @@ int main(int argc, char** argv) {
   CheckNoError(err);
   CheckGet(db, roptions, "foo", "hello");
 
-  StartPhase("compactall");
-  leveldb_compact_range(db, NULL, 0, NULL, 0);
-  CheckGet(db, roptions, "foo", "hello");
-
-  StartPhase("compactrange");
-  leveldb_compact_range(db, "a", 1, "z", 1);
-  CheckGet(db, roptions, "foo", "hello");
-
   StartPhase("writebatch");
   {
     leveldb_writebatch_t* wb = leveldb_writebatch_create();
@@ -228,18 +187,12 @@ int main(int argc, char** argv) {
     leveldb_writebatch_clear(wb);
     leveldb_writebatch_put(wb, "bar", 3, "b", 1);
     leveldb_writebatch_put(wb, "box", 3, "c", 1);
-
-    leveldb_writebatch_t* wb2 = leveldb_writebatch_create();
-    leveldb_writebatch_delete(wb2, "bar", 3);
-    leveldb_writebatch_append(wb, wb2);
-    leveldb_writebatch_destroy(wb2);
-
+    leveldb_writebatch_delete(wb, "bar", 3);
     leveldb_write(db, woptions, wb, &err);
     CheckNoError(err);
     CheckGet(db, roptions, "foo", "hello");
     CheckGet(db, roptions, "bar", NULL);
     CheckGet(db, roptions, "box", "c");
-
     int pos = 0;
     leveldb_writebatch_iterate(wb, &pos, CheckPut, CheckDel);
     CheckCondition(pos == 3);
@@ -326,49 +279,6 @@ int main(int argc, char** argv) {
     CheckGet(db, roptions, "foo", NULL);
     CheckGet(db, roptions, "bar", NULL);
     CheckGet(db, roptions, "box", "c");
-    leveldb_options_set_create_if_missing(options, 1);
-    leveldb_options_set_error_if_exists(options, 1);
-  }
-
-  StartPhase("filter");
-  for (run = 0; run < 2; run++) {
-    // First run uses custom filter, second run uses bloom filter
-    CheckNoError(err);
-    leveldb_filterpolicy_t* policy;
-    if (run == 0) {
-      policy = leveldb_filterpolicy_create(
-          NULL, FilterDestroy, FilterCreate, FilterKeyMatch, FilterName);
-    } else {
-      policy = leveldb_filterpolicy_create_bloom(10);
-    }
-
-    // Create new database
-    leveldb_close(db);
-    leveldb_destroy_db(options, dbname, &err);
-    leveldb_options_set_filter_policy(options, policy);
-    db = leveldb_open(options, dbname, &err);
-    CheckNoError(err);
-    leveldb_put(db, woptions, "foo", 3, "foovalue", 8, &err);
-    CheckNoError(err);
-    leveldb_put(db, woptions, "bar", 3, "barvalue", 8, &err);
-    CheckNoError(err);
-    leveldb_compact_range(db, NULL, 0, NULL, 0);
-
-    fake_filter_result = 1;
-    CheckGet(db, roptions, "foo", "foovalue");
-    CheckGet(db, roptions, "bar", "barvalue");
-    if (phase == 0) {
-      // Must not find value when custom filter returns false
-      fake_filter_result = 0;
-      CheckGet(db, roptions, "foo", NULL);
-      CheckGet(db, roptions, "bar", NULL);
-      fake_filter_result = 1;
-
-      CheckGet(db, roptions, "foo", "foovalue");
-      CheckGet(db, roptions, "bar", "barvalue");
-    }
-    leveldb_options_set_filter_policy(options, NULL);
-    leveldb_filterpolicy_destroy(policy);
   }
 
   StartPhase("cleanup");
@@ -376,7 +286,6 @@ int main(int argc, char** argv) {
   leveldb_options_destroy(options);
   leveldb_readoptions_destroy(roptions);
   leveldb_writeoptions_destroy(woptions);
-  leveldb_free(dbname);
   leveldb_cache_destroy(cache);
   leveldb_comparator_destroy(cmp);
   leveldb_env_destroy(env);

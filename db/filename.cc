@@ -11,32 +11,23 @@
 
 namespace leveldb {
 
-// A utility routine: write "data" to the named file and Sync() it.
-Status WriteStringToFileSync(Env* env, const Slice& data,
-                             const std::string& fname);
-
-static std::string MakeFileName(const std::string& dbname, uint64_t number,
+static std::string MakeFileName(const std::string& name, uint64_t number,
                                 const char* suffix) {
   char buf[100];
   snprintf(buf, sizeof(buf), "/%06llu.%s",
            static_cast<unsigned long long>(number),
            suffix);
-  return dbname + buf;
+  return name + buf;
 }
 
-std::string LogFileName(const std::string& dbname, uint64_t number) {
+std::string LogFileName(const std::string& name, uint64_t number) {
   assert(number > 0);
-  return MakeFileName(dbname, number, "log");
+  return MakeFileName(name, number, "log");
 }
 
-std::string TableFileName(const std::string& dbname, uint64_t number) {
+std::string TableFileName(const std::string& name, uint64_t number) {
   assert(number > 0);
-  return MakeFileName(dbname, number, "ldb");
-}
-
-std::string SSTTableFileName(const std::string& dbname, uint64_t number) {
-  assert(number > 0);
-  return MakeFileName(dbname, number, "sst");
+  return MakeFileName(name, number, "sst");
 }
 
 std::string DescriptorFileName(const std::string& dbname, uint64_t number) {
@@ -76,11 +67,11 @@ std::string OldInfoLogFileName(const std::string& dbname) {
 //    dbname/LOG
 //    dbname/LOG.old
 //    dbname/MANIFEST-[0-9]+
-//    dbname/[0-9]+.(log|sst|ldb)
-bool ParseFileName(const std::string& filename,
+//    dbname/[0-9]+.(log|sst)
+bool ParseFileName(const std::string& fname,
                    uint64_t* number,
                    FileType* type) {
-  Slice rest(filename);
+  Slice rest(fname);
   if (rest == "CURRENT") {
     *number = 0;
     *type = kCurrentFile;
@@ -111,7 +102,7 @@ bool ParseFileName(const std::string& filename,
     Slice suffix = rest;
     if (suffix == Slice(".log")) {
       *type = kLogFile;
-    } else if (suffix == Slice(".sst") || suffix == Slice(".ldb")) {
+    } else if (suffix == Slice(".sst")) {
       *type = kTableFile;
     } else if (suffix == Slice(".dbtmp")) {
       *type = kTempFile;
@@ -131,7 +122,7 @@ Status SetCurrentFile(Env* env, const std::string& dbname,
   assert(contents.starts_with(dbname + "/"));
   contents.remove_prefix(dbname.size() + 1);
   std::string tmp = TempFileName(dbname, descriptor_number);
-  Status s = WriteStringToFileSync(env, contents.ToString() + "\n", tmp);
+  Status s = WriteStringToFile(env, contents.ToString() + "\n", tmp);
   if (s.ok()) {
     s = env->RenameFile(tmp, CurrentFileName(dbname));
   }
@@ -141,4 +132,4 @@ Status SetCurrentFile(Env* env, const std::string& dbname,
   return s;
 }
 
-}  // namespace leveldb
+}

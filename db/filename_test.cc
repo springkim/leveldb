@@ -27,7 +27,6 @@ TEST(FileNameTest, Parse) {
     { "100.log",            100,   kLogFile },
     { "0.log",              0,     kLogFile },
     { "0.sst",              0,     kTableFile },
-    { "0.ldb",              0,     kTableFile },
     { "CURRENT",            0,     kCurrentFile },
     { "LOCK",               0,     kDBLockFile },
     { "MANIFEST-2",         2,     kDescriptorFile },
@@ -71,7 +70,7 @@ TEST(FileNameTest, Parse) {
   for (int i = 0; i < sizeof(errors) / sizeof(errors[0]); i++) {
     std::string f = errors[i];
     ASSERT_TRUE(!ParseFileName(f, &number, &type)) << f;
-  }
+  };
 }
 
 TEST(FileNameTest, Construction) {
@@ -114,21 +113,9 @@ TEST(FileNameTest, Construction) {
   ASSERT_TRUE(ParseFileName(fname.c_str() + 4, &number, &type));
   ASSERT_EQ(999, number);
   ASSERT_EQ(kTempFile, type);
-
-  fname = InfoLogFileName("foo");
-  ASSERT_EQ("foo/", std::string(fname.data(), 4));
-  ASSERT_TRUE(ParseFileName(fname.c_str() + 4, &number, &type));
-  ASSERT_EQ(0, number);
-  ASSERT_EQ(kInfoLogFile, type);
-
-  fname = OldInfoLogFileName("foo");
-  ASSERT_EQ("foo/", std::string(fname.data(), 4));
-  ASSERT_TRUE(ParseFileName(fname.c_str() + 4, &number, &type));
-  ASSERT_EQ(0, number);
-  ASSERT_EQ(kInfoLogFile, type);
 }
 
-}  // namespace leveldb
+}
 
 int main(int argc, char** argv) {
   return leveldb::test::RunAllTests();

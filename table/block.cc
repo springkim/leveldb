@@ -9,52 +9,47 @@
 #include <vector>
 #include <algorithm>
 #include "leveldb/comparator.h"
-#include "table/format.h"
 #include "util/coding.h"
 #include "util/logging.h"
 
 namespace leveldb {
 
 inline uint32_t Block::NumRestarts() const {
-  assert(size_ >= sizeof(uint32_t));
+  assert(size_ >= 2*sizeof(uint32_t));
   return DecodeFixed32(data_ + size_ - sizeof(uint32_t));
 }
 
-Block::Block(const BlockContents& contents)
-    : data_(contents.data.data()),
-      size_(contents.data.size()),
-      owned_(contents.heap_allocated) {
+Block::Block(const char* data, size_t size)
+    : data_(data),
+      size_(size) {
   if (size_ < sizeof(uint32_t)) {
     size_ = 0;  // Error marker
   } else {
-    size_t max_restarts_allowed = (size_-sizeof(uint32_t)) / sizeof(uint32_t);
-    if (NumRestarts() > max_restarts_allowed) {
-      // The size is too small for NumRestarts()
+    restart_offset_ = size_ - (1 + NumRestarts()) * sizeof(uint32_t);
+    if (restart_offset_ > size_ - sizeof(uint32_t)) {
+      // The size is too small for NumRestarts() and therefore
+      // restart_offset_ wrapped around.
       size_ = 0;
-    } else {
-      restart_offset_ = size_ - (1 + NumRestarts()) * sizeof(uint32_t);
     }
   }
 }
 
 Block::~Block() {
-  if (owned_) {
-    delete[] data_;
-  }
+  delete[] data_;
 }
 
 // Helper routine: decode the next block entry starting at "p",
 // storing the number of shared key bytes, non_shared key bytes,
 // and the length of the value in "*shared", "*non_shared", and
-// "*value_length", respectively.  Will not dereference past "limit".
+// "*value_length", respectively.  Will not derefence past "limit".
 //
-// If any errors are detected, returns nullptr.  Otherwise, returns a
+// If any errors are detected, returns NULL.  Otherwise, returns a
 // pointer to the key delta (just past the three decoded values).
 static inline const char* DecodeEntry(const char* p, const char* limit,
                                       uint32_t* shared,
                                       uint32_t* non_shared,
                                       uint32_t* value_length) {
-  if (limit - p < 3) return nullptr;
+  if (limit - p < 3) return NULL;
   *shared = reinterpret_cast<const unsigned char*>(p)[0];
   *non_shared = reinterpret_cast<const unsigned char*>(p)[1];
   *value_length = reinterpret_cast<const unsigned char*>(p)[2];
@@ -62,13 +57,13 @@ static inline const char* DecodeEntry(const char* p, const char* limit,
     // Fast path: all three values are encoded in one byte each
     p += 3;
   } else {
-    if ((p = GetVarint32Ptr(p, limit, shared)) == nullptr) return nullptr;
-    if ((p = GetVarint32Ptr(p, limit, non_shared)) == nullptr) return nullptr;
-    if ((p = GetVarint32Ptr(p, limit, value_length)) == nullptr) return nullptr;
+    if ((p = GetVarint32Ptr(p, limit, shared)) == NULL) return NULL;
+    if ((p = GetVarint32Ptr(p, limit, non_shared)) == NULL) return NULL;
+    if ((p = GetVarint32Ptr(p, limit, value_length)) == NULL) return NULL;
   }
 
   if (static_cast<uint32_t>(limit - p) < (*non_shared + *value_length)) {
-    return nullptr;
+    return NULL;
   }
   return p;
 }
@@ -163,8 +158,8 @@ class Block::Iter : public Iterator {
   }
 
   virtual void Seek(const Slice& target) {
-    // Binary search in restart array to find the last restart point
-    // with a key < target
+    // Binary search in restart array to find the first restart point
+    // with a key >= target
     uint32_t left = 0;
     uint32_t right = num_restarts_ - 1;
     while (left < right) {
@@ -174,7 +169,7 @@ class Block::Iter : public Iterator {
       const char* key_ptr = DecodeEntry(data_ + region_offset,
                                         data_ + restarts_,
                                         &shared, &non_shared, &value_length);
-      if (key_ptr == nullptr || (shared != 0)) {
+      if (key_ptr == NULL || (shared != 0)) {
         CorruptionError();
         return;
       }
@@ -237,7 +232,7 @@ class Block::Iter : public Iterator {
     // Decode next entry
     uint32_t shared, non_shared, value_length;
     p = DecodeEntry(p, limit, &shared, &non_shared, &value_length);
-    if (p == nullptr || key_.size() < shared) {
+    if (p == NULL || key_.size() < shared) {
       CorruptionError();
       return false;
     } else {
@@ -254,7 +249,7 @@ class Block::Iter : public Iterator {
 };
 
 Iterator* Block::NewIterator(const Comparator* cmp) {
-  if (size_ < sizeof(uint32_t)) {
+  if (size_ < 2*sizeof(uint32_t)) {
     return NewErrorIterator(Status::Corruption("bad block contents"));
   }
   const uint32_t num_restarts = NumRestarts();
@@ -265,4 +260,4 @@ Iterator* Block::NewIterator(const Comparator* cmp) {
   }
 }
 
-}  // namespace leveldb
+}

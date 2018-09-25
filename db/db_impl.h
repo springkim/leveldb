@@ -5,7 +5,6 @@
 #ifndef STORAGE_LEVELDB_DB_DB_IMPL_H_
 #define STORAGE_LEVELDB_DB_DB_IMPL_H_
 
-#include <deque>
 #include <set>
 #include "db/dbformat.h"
 #include "db/log_writer.h"
@@ -13,7 +12,6 @@
 #include "leveldb/db.h"
 #include "leveldb/env.h"
 #include "port/port.h"
-#include "port/thread_annotations.h"
 
 namespace leveldb {
 
@@ -59,120 +57,103 @@ class DBImpl : public DB {
   // file at a level >= 1.
   int64_t TEST_MaxNextLevelOverlappingBytes();
 
-  // Record a sample of bytes read at the specified internal key.
-  // Samples are taken approximately once every config::kReadBytesPeriod
-  // bytes.
-  void RecordReadSample(Slice key);
-
  private:
   friend class DB;
-  struct CompactionState;
-  struct Writer;
 
   Iterator* NewInternalIterator(const ReadOptions&,
-                                SequenceNumber* latest_snapshot,
-                                uint32_t* seed);
+                                SequenceNumber* latest_snapshot);
 
   Status NewDB();
 
   // Recover the descriptor from persistent storage.  May do a significant
   // amount of work to recover recently logged updates.  Any changes to
   // be made to the descriptor are added to *edit.
-  Status Recover(VersionEdit* edit, bool* save_manifest)
-      EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+  Status Recover(VersionEdit* edit);
 
   void MaybeIgnoreError(Status* s) const;
 
   // Delete any unneeded files and stale in-memory entries.
-  void DeleteObsoleteFiles() EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+  void DeleteObsoleteFiles();
 
   // Compact the in-memory write buffer to disk.  Switches to a new
   // log-file/memtable and writes a new descriptor iff successful.
-  // Errors are recorded in bg_error_.
-  void CompactMemTable() EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+  Status CompactMemTable();
 
-  Status RecoverLogFile(uint64_t log_number, bool last_log, bool* save_manifest,
-                        VersionEdit* edit, SequenceNumber* max_sequence)
-      EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+  Status RecoverLogFile(uint64_t log_number,
+                        VersionEdit* edit,
+                        SequenceNumber* max_sequence);
 
-  Status WriteLevel0Table(MemTable* mem, VersionEdit* edit, Version* base)
-      EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+  Status WriteLevel0Table(MemTable* mem, VersionEdit* edit, Version* base);
 
-  Status MakeRoomForWrite(bool force /* compact even if there is room? */)
-      EXCLUSIVE_LOCKS_REQUIRED(mutex_);
-  WriteBatch* BuildBatchGroup(Writer** last_writer)
-      EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+  // Only thread is allowed to log at a time.
+  struct LoggerId { };          // Opaque identifier for logging thread
+  void AcquireLoggingResponsibility(LoggerId* self);
+  void ReleaseLoggingResponsibility(LoggerId* self);
 
-  void RecordBackgroundError(const Status& s);
+  Status MakeRoomForWrite(bool force /* compact even if there is room? */);
 
-  void MaybeScheduleCompaction() EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+  struct CompactionState;
+
+  void MaybeScheduleCompaction();
   static void BGWork(void* db);
   void BackgroundCall();
-  void BackgroundCompaction() EXCLUSIVE_LOCKS_REQUIRED(mutex_);
-  void CleanupCompaction(CompactionState* compact)
-      EXCLUSIVE_LOCKS_REQUIRED(mutex_);
-  Status DoCompactionWork(CompactionState* compact)
-      EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+  void BackgroundCompaction();
+  void CleanupCompaction(CompactionState* compact);
+  Status DoCompactionWork(CompactionState* compact);
 
   Status OpenCompactionOutputFile(CompactionState* compact);
   Status FinishCompactionOutputFile(CompactionState* compact, Iterator* input);
-  Status InstallCompactionResults(CompactionState* compact)
-      EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+  Status InstallCompactionResults(CompactionState* compact);
 
   // Constant after construction
   Env* const env_;
   const InternalKeyComparator internal_comparator_;
-  const InternalFilterPolicy internal_filter_policy_;
   const Options options_;  // options_.comparator == &internal_comparator_
-  const bool owns_info_log_;
-  const bool owns_cache_;
+  bool owns_info_log_;
+  bool owns_cache_;
   const std::string dbname_;
 
   // table_cache_ provides its own synchronization
-  TableCache* const table_cache_;
+  TableCache* table_cache_;
 
-  // Lock over the persistent DB state.  Non-null iff successfully acquired.
+  // Lock over the persistent DB state.  Non-NULL iff successfully acquired.
   FileLock* db_lock_;
 
   // State below is protected by mutex_
   port::Mutex mutex_;
   port::AtomicPointer shutting_down_;
-  port::CondVar background_work_finished_signal_ GUARDED_BY(mutex_);
+  port::CondVar bg_cv_;          // Signalled when background work finishes
   MemTable* mem_;
-  MemTable* imm_ GUARDED_BY(mutex_);  // Memtable being compacted
-  port::AtomicPointer has_imm_;       // So bg thread can detect non-null imm_
+  MemTable* imm_;                // Memtable being compacted
+  port::AtomicPointer has_imm_;  // So bg thread can detect non-NULL imm_
   WritableFile* logfile_;
-  uint64_t logfile_number_ GUARDED_BY(mutex_);
+  uint64_t logfile_number_;
   log::Writer* log_;
-  uint32_t seed_ GUARDED_BY(mutex_);  // For sampling.
-
-  // Queue of writers.
-  std::deque<Writer*> writers_ GUARDED_BY(mutex_);
-  WriteBatch* tmp_batch_ GUARDED_BY(mutex_);
-
-  SnapshotList snapshots_ GUARDED_BY(mutex_);
+  LoggerId* logger_;            // NULL, or the id of the current logging thread
+  port::CondVar logger_cv_;     // For threads waiting to log
+  SnapshotList snapshots_;
 
   // Set of table files to protect from deletion because they are
   // part of ongoing compactions.
-  std::set<uint64_t> pending_outputs_ GUARDED_BY(mutex_);
+  std::set<uint64_t> pending_outputs_;
 
   // Has a background compaction been scheduled or is running?
-  bool background_compaction_scheduled_ GUARDED_BY(mutex_);
+  bool bg_compaction_scheduled_;
 
   // Information for a manual compaction
   struct ManualCompaction {
     int level;
     bool done;
-    const InternalKey* begin;   // null means beginning of key range
-    const InternalKey* end;     // null means end of key range
+    const InternalKey* begin;   // NULL means beginning of key range
+    const InternalKey* end;     // NULL means end of key range
     InternalKey tmp_storage;    // Used to keep track of compaction progress
   };
-  ManualCompaction* manual_compaction_ GUARDED_BY(mutex_);
+  ManualCompaction* manual_compaction_;
 
-  VersionSet* const versions_;
+  VersionSet* versions_;
 
   // Have we encountered a background error in paranoid mode?
-  Status bg_error_ GUARDED_BY(mutex_);
+  Status bg_error_;
 
   // Per level compaction stats.  stats_[level] stores the stats for
   // compactions that produced data for the specified "level".
@@ -189,7 +170,7 @@ class DBImpl : public DB {
       this->bytes_written += c.bytes_written;
     }
   };
-  CompactionStats stats_[config::kNumLevels] GUARDED_BY(mutex_);
+  CompactionStats stats_[config::kNumLevels];
 
   // No copying allowed
   DBImpl(const DBImpl&);
@@ -202,11 +183,10 @@ class DBImpl : public DB {
 
 // Sanitize db options.  The caller should delete result.info_log if
 // it is not equal to src.info_log.
-Options SanitizeOptions(const std::string& db,
-                        const InternalKeyComparator* icmp,
-                        const InternalFilterPolicy* ipolicy,
-                        const Options& src);
+extern Options SanitizeOptions(const std::string& db,
+                               const InternalKeyComparator* icmp,
+                               const Options& src);
 
-}  // namespace leveldb
+}
 
 #endif  // STORAGE_LEVELDB_DB_DB_IMPL_H_
